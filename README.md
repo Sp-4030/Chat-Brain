@@ -1,4 +1,4 @@
-# ChatBrain
+# 🧠🤖Chat-Brain🧠🤖
 
 **AI-powered YouTube Live Chat Assistant using Ollama, Llama 3.2, LangChain, Python, and YouTube Data API v3.**
 
@@ -612,4 +612,4 @@ https://github.com/Sp-4030
 ## License
 
 This project is created for educational and personal use.
-# Chat-Brain
+# 🧠🤖Chat-Brain🧠🤖
