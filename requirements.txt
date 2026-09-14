@@ -1,0 +1,5 @@
+streamlit
+langchain
+langchain-ollama
+google-api-python-client
+python-dotenv
