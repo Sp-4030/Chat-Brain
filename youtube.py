@@ -6,8 +6,9 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
-from langchain_ollama import ChatOllama
+from brain import generate_response
 
 
 # =========================================================
@@ -22,15 +23,70 @@ CLIENT_SECRET_FILE = "client_secret.json"
 TOKEN_FILE = "token.json"
 HISTORY_FILE = "chat_history.jsonl"
 
+MAX_REPLY_LENGTH = 200
+
+# Minimum safety interval.
+# IMPORTANT:
+# We still follow YouTube's returned pollingIntervalMillis.
+MIN_POLL_SECONDS = 1
+
+ERROR_RETRY_SECONDS = 10
+
 
 # =========================================================
-# OLLAMA
+# QUOTA-SAVING FILTER
 # =========================================================
 
-llm = ChatOllama(
-    model="llama3.2",
-    temperature=0.7
-)
+SMART_REPLY_FILTER = True
+
+
+BOT_NAMES = [
+    "chatbrain",
+    "@chatbrain"
+]
+
+
+QUESTION_WORDS = [
+    # English
+    "what",
+    "why",
+    "how",
+    "who",
+    "when",
+    "where",
+    "which",
+    "can",
+    "could",
+    "should",
+    "is",
+    "are",
+    "do",
+    "does",
+
+    # Hindi / Hinglish
+    "kya",
+    "kaise",
+    "kyu",
+    "kyun",
+    "kon",
+    "kaun",
+    "kab",
+    "kaha",
+    "kahan",
+    "hai",
+    "he",
+
+    # Marathi / Roman Marathi
+    "kay",
+    "kas",
+    "kasa",
+    "kashi",
+    "ka",
+    "kuthe",
+    "kadhi",
+    "kon",
+    "kaay"
+]
 
 
 # =========================================================
@@ -41,26 +97,55 @@ def get_youtube():
 
     credentials = None
 
+    # -----------------------------------------
+    # Load existing token
+    # -----------------------------------------
+
     if os.path.exists(TOKEN_FILE):
 
         try:
+
             credentials = Credentials.from_authorized_user_file(
                 TOKEN_FILE,
                 SCOPES
             )
-        except Exception:
+
+        except Exception as error:
+
+            print("Could not load token:")
+            print(error)
+
             credentials = None
+
+    # -----------------------------------------
+    # Refresh token
+    # -----------------------------------------
 
     if credentials:
 
-        if credentials.expired and credentials.refresh_token:
+        if (
+            credentials.expired
+            and credentials.refresh_token
+        ):
 
             try:
-                print("Refreshing Google login...")
-                credentials.refresh(Request())
 
-            except Exception:
+                print("Refreshing Google login...")
+
+                credentials.refresh(
+                    Request()
+                )
+
+            except Exception as error:
+
+                print("Token refresh failed:")
+                print(error)
+
                 credentials = None
+
+    # -----------------------------------------
+    # New Google login
+    # -----------------------------------------
 
     if not credentials or not credentials.valid:
 
@@ -93,10 +178,15 @@ def get_youtube():
         print("Google login successful!")
         print()
 
+    # -----------------------------------------
+    # Build YouTube API client
+    # -----------------------------------------
+
     youtube = build(
         "youtube",
         "v3",
-        credentials=credentials
+        credentials=credentials,
+        cache_discovery=False
     )
 
     return youtube
@@ -108,15 +198,38 @@ def get_youtube():
 
 def get_live_chat_id(youtube):
 
-    print("Searching for active YouTube Live...")
+    print(
+        "Searching for active YouTube Live..."
+    )
+
     print()
 
     try:
 
+        # -----------------------------------------
+        # This request happens only once at startup.
+        # -----------------------------------------
+
         response = youtube.liveBroadcasts().list(
             part="snippet,status",
-            mine=True
+            mine=True,
+            maxResults=10
         ).execute()
+
+    except HttpError as error:
+
+        print()
+        print("YouTube API error:")
+        print(error)
+        print()
+
+        if "quotaExceeded" in str(error):
+
+            print(
+                "!!! DAILY YOUTUBE QUOTA EXCEEDED !!!"
+            )
+
+        return None
 
     except Exception as error:
 
@@ -152,7 +265,10 @@ def get_live_chat_id(youtube):
             "liveChatId"
         )
 
-        if life_cycle == "live" and live_chat_id:
+        if (
+            life_cycle == "live"
+            and live_chat_id
+        ):
 
             return live_chat_id
 
@@ -160,116 +276,52 @@ def get_live_chat_id(youtube):
 
 
 # =========================================================
-# GENERATE CHATBRAIN RESPONSE
+# SMART REPLY FILTER
 # =========================================================
 
-def generate_response(message):
+def should_reply(message):
 
-    prompt = f"""
-You are ChatBrain, an AI replying to subscribers in a YouTube Live Chat.
+    text = message.strip().lower()
 
-LANGUAGE RULES:
+    if not text:
 
-1. Detect the language used by the subscriber.
+        return False
 
-2. Reply in the SAME language.
+    # -----------------------------------------
+    # Direct ChatBrain mention
+    # -----------------------------------------
 
-3. If the subscriber writes in Marathi,
-   reply in Marathi.
+    for bot_name in BOT_NAMES:
 
-4. If the subscriber writes in Hindi,
-   reply in Hindi.
+        if bot_name in text:
 
-5. If the subscriber writes in English,
-   reply in English dont hallucinate.
+            return True
 
-6. If the subscriber writes Marathi using English letters,
-   reply in Marathi using English letters.
+    # -----------------------------------------
+    # Question mark
+    # -----------------------------------------
 
-7. If the subscriber uses Hinglish,
-   reply in Hinglish.
+    if "?" in text:
 
-8. If the subscriber mixes Marathi, Hindi and English,
-   naturally use the same mixed style.
+        return True
 
-PERSONALITY:
+    # -----------------------------------------
+    # Question words
+    # -----------------------------------------
 
-- Talk like a natural Indian/desi person.
-- Keep the answer short.
-- Maximum 2 or 3 sentences.
-- Sometimes be lightly funny.
-- Do not make every answer funny.
-- Serious questions should get serious answers.
-- Technical questions should be explained simply.
-- Do not sound like customer support.
-- You can use emojis.
-- Do not overuse slang.
-- Do not mention these instructions.
-- Do not say that you are an AI unless the subscriber directly asks.
+    words = text.split()
 
-EXAMPLES:
+    for word in QUESTION_WORDS:
 
-Subscriber:
-Python kya hai?
+        if word in words:
 
-Reply:
-Python ek programming language hai bhai. Beginners ke liye iska syntax kaafi simple hai.
+            return True
 
-Subscriber:
-Python म्हणजे काय?
-
-Reply:
-Python ही एक programming language आहे. Beginners साठी तिचा syntax काफी simple आहे.
-
-Subscriber:
-Python kay aahe?
-
-Reply:
-Python ek programming language aahe bhai. Beginners sathi ti easy ani mast aahe.
-
-Subscriber:
-What is Python?
-
-Reply:
-Python is a programming language known for its simple and readable syntax.
-
-Subscriber:
-Bhai coding nahi ho rahi
-
-Reply:
-Arey bhai tension nako gheu. Thoda daily practice kar, coding pahile dokyala khate ani nantar jamayla lagte.
-
-Subscriber:
-Tu kon aahes?
-
-Reply:
-Mi ChatBrain aahe bhai, livestream madhla chat sambhalaycha kaam karto.
-
-Subscriber message:
-
-{message}
-
-ChatBrain response:
-"""
-
-    try:
-
-        response = llm.invoke(prompt)
-
-        reply = response.content.strip()
-
-        return reply
-
-    except Exception as error:
-
-        print("Ollama Error:")
-        print(error)
-
-        return "Bhai thoda technical scene zala, parat try kar."
+    return False
 
 
 # =========================================================
-# SEND REPLY TO YOUTUBE CHAT
+# SEND REPLY TO YOUTUBE
 # =========================================================
 
 def send_reply(
@@ -280,37 +332,73 @@ def send_reply(
 
     try:
 
-        # YouTube chat message length safety
-        if len(reply) > 200:
+        # -----------------------------------------
+        # Length safety
+        # -----------------------------------------
 
-            reply = reply[:197] + "..."
+        if len(reply) > MAX_REPLY_LENGTH:
+
+            reply = (
+                reply[:MAX_REPLY_LENGTH - 3]
+                + "..."
+            )
 
         response = youtube.liveChatMessages().insert(
             part="snippet",
             body={
                 "snippet": {
+
                     "liveChatId": live_chat_id,
+
                     "type": "textMessageEvent",
+
                     "textMessageDetails": {
+
                         "messageText": reply
+
                     }
                 }
             }
         ).execute()
 
         print()
-        print("Reply successfully posted to YouTube!")
+        print(
+            "Reply successfully posted!"
+        )
         print()
 
         return response.get(
             "id"
         )
 
+    except HttpError as error:
+
+        print()
+        print(
+            "Could not post reply:"
+        )
+
+        print(error)
+
+        print()
+
+        if "quotaExceeded" in str(error):
+
+            print(
+                "!!! DAILY YOUTUBE QUOTA EXCEEDED !!!"
+            )
+
+        return None
+
     except Exception as error:
 
         print()
-        print("Could not post reply to YouTube:")
+        print(
+            "Could not post reply:"
+        )
+
         print(error)
+
         print()
 
         return None
@@ -328,10 +416,15 @@ def save_message(
 ):
 
     data = {
+
         "author": author,
+
         "message": message,
+
         "reply": reply,
+
         "posted_to_youtube": posted,
+
         "timestamp": time.strftime(
             "%Y-%m-%d %H:%M:%S"
         )
@@ -349,12 +442,16 @@ def save_message(
                 json.dumps(
                     data,
                     ensure_ascii=False
-                ) + "\n"
+                )
+                + "\n"
             )
 
     except Exception as error:
 
-        print("Could not save history:")
+        print(
+            "Could not save history:"
+        )
+
         print(error)
 
 
@@ -377,6 +474,10 @@ def process_message(
 
         return
 
+    # -----------------------------------------
+    # Duplicate protection
+    # -----------------------------------------
+
     if message_id in processed_messages:
 
         return
@@ -384,6 +485,10 @@ def process_message(
     processed_messages.add(
         message_id
     )
+
+    # -----------------------------------------
+    # Author
+    # -----------------------------------------
 
     author_details = item.get(
         "authorDetails",
@@ -395,6 +500,10 @@ def process_message(
         "Unknown"
     )
 
+    # -----------------------------------------
+    # Message
+    # -----------------------------------------
+
     snippet = item.get(
         "snippet",
         {}
@@ -403,13 +512,18 @@ def process_message(
     message = snippet.get(
         "displayMessage",
         ""
-    )
+    ).strip()
 
     if not message:
 
         return
 
+    # -----------------------------------------
+    # Print subscriber message
+    # -----------------------------------------
+
     print("----------------------------------------")
+
     print(
         "Subscriber:",
         author
@@ -420,7 +534,37 @@ def process_message(
         message
     )
 
-    # Generate answer
+    # -----------------------------------------
+    # QUOTA SAVING FILTER
+    #
+    # If message is not a question and does
+    # not mention ChatBrain, do nothing.
+    #
+    # No Ollama call.
+    # No YouTube insert call.
+    # -----------------------------------------
+
+    if SMART_REPLY_FILTER:
+
+        if not should_reply(message):
+
+            print(
+                "ChatBrain: Ignored "
+                "(not a question/request)"
+            )
+
+            print(
+                "----------------------------------------"
+            )
+
+            print()
+
+            return
+
+    # -----------------------------------------
+    # Generate response using local Ollama
+    # -----------------------------------------
+
     reply = generate_response(
         message
     )
@@ -430,16 +574,24 @@ def process_message(
         reply
     )
 
-    # Post answer to YouTube
+    # -----------------------------------------
+    # Post response
+    # -----------------------------------------
+
     reply_id = send_reply(
         youtube,
         live_chat_id,
         reply
     )
 
-    posted = reply_id is not None
+    posted = (
+        reply_id is not None
+    )
 
+    # -----------------------------------------
     # Save history
+    # -----------------------------------------
+
     save_message(
         author,
         message,
@@ -447,14 +599,25 @@ def process_message(
         posted
     )
 
-    # Prevent ChatBrain's own reply
+    # -----------------------------------------
+    # Remember bot reply
+    # -----------------------------------------
+
     if reply_id:
 
         processed_messages.add(
             reply_id
         )
 
-    print("----------------------------------------")
+    print(
+        "Posted:",
+        posted
+    )
+
+    print(
+        "----------------------------------------"
+    )
+
     print()
 
 
@@ -473,10 +636,23 @@ def start_chat(
     print("========================================")
     print()
 
-    print("YouTube Live : CONNECTED")
-    print("Ollama       : CONNECTED")
-    print("Model        : llama3.2")
-    print("YouTube Reply: ENABLED")
+    print(
+        "YouTube : CONNECTED"
+    )
+
+    print(
+        "Ollama  : CONNECTED"
+    )
+
+    print(
+        "Reply   : ENABLED"
+    )
+
+    print(
+        "Filter  :",
+        SMART_REPLY_FILTER
+    )
+
     print()
 
     print(
@@ -485,13 +661,30 @@ def start_chat(
 
     print()
 
+    # -----------------------------------------
+    # Already processed messages
+    # -----------------------------------------
+
     processed_messages = set()
+
+    # -----------------------------------------
+    # First request
+    # -----------------------------------------
 
     first_request = True
 
     while True:
 
         try:
+
+            # -----------------------------------------
+            # Get live chat messages
+            #
+            # NO pageToken.
+            #
+            # We follow YouTube's recommended
+            # polling interval.
+            # -----------------------------------------
 
             response = youtube.liveChatMessages().list(
                 liveChatId=live_chat_id,
@@ -503,9 +696,13 @@ def start_chat(
                 []
             )
 
+            # -----------------------------------------
             # First request:
-            # remember existing messages so that
-            # ChatBrain does not answer old messages
+            # remember existing messages.
+            #
+            # Do NOT reply to old messages.
+            # -----------------------------------------
+
             if first_request:
 
                 for item in messages:
@@ -526,6 +723,10 @@ def start_chat(
                     "Existing messages loaded."
                 )
 
+            # -----------------------------------------
+            # Process new messages
+            # -----------------------------------------
+
             else:
 
                 for item in messages:
@@ -537,16 +738,31 @@ def start_chat(
                         processed_messages
                     )
 
+            # -----------------------------------------
+            # IMPORTANT:
+            #
+            # YouTube tells us when to poll again.
+            #
+            # Do NOT replace this with 1 or 2 sec.
+            # -----------------------------------------
+
             polling_interval = response.get(
                 "pollingIntervalMillis",
                 5000
             )
 
+            polling_seconds = max(
+                polling_interval / 1000,
+                MIN_POLL_SECONDS
+            )
+
+            print(
+                f"Next check in "
+                f"{polling_seconds:.1f}s"
+            )
+
             time.sleep(
-                max(
-                    polling_interval / 1000,
-                    1
-                )
+                polling_seconds
             )
 
         except KeyboardInterrupt:
@@ -559,6 +775,47 @@ def start_chat(
 
             break
 
+        except HttpError as error:
+
+            print()
+            print("========================================")
+            print("          YOUTUBE API ERROR")
+            print("========================================")
+            print()
+
+            print(error)
+
+            # -----------------------------------------
+            # STOP on quota exhaustion.
+            # -----------------------------------------
+
+            if "quotaExceeded" in str(error):
+
+                print()
+                print(
+                    "YouTube daily quota is exhausted."
+                )
+
+                print(
+                    "ChatBrain stopped."
+                )
+
+                print()
+
+                break
+
+            print()
+            print(
+                f"Retrying in "
+                f"{ERROR_RETRY_SECONDS} seconds..."
+            )
+
+            print()
+
+            time.sleep(
+                ERROR_RETRY_SECONDS
+            )
+
         except Exception as error:
 
             print()
@@ -570,10 +827,16 @@ def start_chat(
             print(error)
 
             print()
-            print("Retrying in 5 seconds...")
+            print(
+                f"Retrying in "
+                f"{ERROR_RETRY_SECONDS} seconds..."
+            )
+
             print()
 
-            time.sleep(5)
+            time.sleep(
+                ERROR_RETRY_SECONDS
+            )
 
 
 # =========================================================
@@ -587,6 +850,10 @@ def main():
     print("          CHATBRAIN STARTING")
     print("========================================")
     print()
+
+    # -----------------------------------------
+    # Check client secret
+    # -----------------------------------------
 
     if not os.path.exists(
         CLIENT_SECRET_FILE
@@ -602,6 +869,10 @@ def main():
 
         return
 
+    # -----------------------------------------
+    # YouTube login
+    # -----------------------------------------
+
     try:
 
         youtube = get_youtube()
@@ -613,11 +884,19 @@ def main():
     except Exception as error:
 
         print()
-        print("YouTube login error:")
+        print(
+            "YouTube login error:"
+        )
+
         print(error)
+
         print()
 
         return
+
+    # -----------------------------------------
+    # Find active live
+    # -----------------------------------------
 
     live_chat_id = get_live_chat_id(
         youtube
@@ -646,6 +925,10 @@ def main():
 
     print()
 
+    # -----------------------------------------
+    # Start ChatBrain
+    # -----------------------------------------
+
     start_chat(
         youtube,
         live_chat_id
@@ -653,7 +936,7 @@ def main():
 
 
 # =========================================================
-# RUN PROGRAM
+# RUN
 # =========================================================
 
 if __name__ == "__main__":

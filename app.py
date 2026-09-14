@@ -1,12 +1,11 @@
 import streamlit as st
 import json
 import os
-import time
 
 
-# ==========================================
+# =========================================================
 # PAGE CONFIG
-# ==========================================
+# =========================================================
 
 st.set_page_config(
     page_title="ChatBrain",
@@ -15,35 +14,37 @@ st.set_page_config(
 )
 
 
-# ==========================================
+# =========================================================
 # TITLE
-# ==========================================
+# =========================================================
 
-st.title("ChatBrain")
+st.title("🧠 ChatBrain")
 
 st.caption(
     "YouTube Live Chat → Ollama → ChatBrain → Replay"
 )
 
 
-# ==========================================
+# =========================================================
 # FILE
-# ==========================================
+# =========================================================
 
 HISTORY_FILE = "chat_history.jsonl"
 
 
-# ==========================================
-# READ CHAT HISTORY
-# ==========================================
+# =========================================================
+# LOAD CHAT HISTORY
+# =========================================================
 
 def load_messages():
 
     messages = []
 
-    if not os.path.exists(HISTORY_FILE):
-        return messages
+    if not os.path.exists(
+        HISTORY_FILE
+    ):
 
+        return messages
 
     try:
 
@@ -58,36 +59,42 @@ def load_messages():
                 line = line.strip()
 
                 if not line:
+
                     continue
 
                 try:
 
-                    data = json.loads(line)
+                    data = json.loads(
+                        line
+                    )
 
-                    messages.append(data)
+                    messages.append(
+                        data
+                    )
 
                 except json.JSONDecodeError:
 
                     continue
 
-    except Exception:
+    except Exception as error:
 
-        pass
-
+        st.error(
+            f"Could not read history: {error}"
+        )
 
     return messages
 
 
-# ==========================================
+# =========================================================
 # LOAD DATA
-# ==========================================
+# =========================================================
 
 messages = load_messages()
 
 
-# ==========================================
+# =========================================================
 # STATUS
-# ==========================================
+# =========================================================
 
 col1, col2, col3 = st.columns(3)
 
@@ -119,11 +126,13 @@ with col3:
 st.divider()
 
 
-# ==========================================
-# LIVE REPLAY
-# ==========================================
+# =========================================================
+# LIVE CHAT REPLAY
+# =========================================================
 
-st.subheader("Live Chat Replay")
+st.subheader(
+    "💬 Live Chat Replay"
+)
 
 
 if not messages:
@@ -134,9 +143,11 @@ if not messages:
 
 else:
 
-    # Show newest message first
+    # Newest message first
 
-    for item in reversed(messages):
+    for item in reversed(
+        messages
+    ):
 
         author = item.get(
             "author",
@@ -158,42 +169,58 @@ else:
             ""
         )
 
+        posted = item.get(
+            "posted_to_youtube",
+            False
+        )
 
-        # ------------------------------
+        # -----------------------------------------
         # Subscriber
-        # ------------------------------
+        # -----------------------------------------
 
         st.markdown(
-            f"### {author}"
+            f"### 👤 {author}"
         )
-
 
         st.write(
-            f"Subscriber: {message}"
+            f"**Subscriber:** {message}"
         )
 
-
-        # ------------------------------
+        # -----------------------------------------
         # ChatBrain
-        # ------------------------------
+        # -----------------------------------------
 
-        st.success(
-            f"ChatBrain: {reply}"
-        )
+        if reply:
 
+            st.success(
+                f"🤖 ChatBrain: {reply}"
+            )
 
-        st.caption(
-            timestamp
-        )
+        # -----------------------------------------
+        # YouTube status
+        # -----------------------------------------
 
+        if posted:
+
+            st.caption(
+                f"🟢 Posted to YouTube • {timestamp}"
+            )
+
+        else:
+
+            st.caption(
+                f"⚪ Not posted • {timestamp}"
+            )
 
         st.divider()
 
 
-# ==========================================
-# AUTO REFRESH
-# ==========================================
+# =========================================================
+# REFRESH
+# =========================================================
 
-time.sleep(2)
+if st.button(
+    "🔄 Refresh Chat"
+):
 
-st.rerun()
+    st.rerun()
