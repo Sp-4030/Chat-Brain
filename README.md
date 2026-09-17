@@ -1,422 +1,285 @@
-# 🧠🤖Chat-Brain🧠🤖
+# ChatBrain
 
-**AI-powered YouTube Live Chat Assistant using Ollama, Llama 3.2, LangChain, Python, and YouTube Data API v3.**
+ChatBrain is a local AI-powered YouTube Live Chat assistant. It watches a live stream, filters relevant subscriber messages, sends them to a local Ollama model, and posts a short conversational reply back into chat.
 
-ChatBrain reads messages from a YouTube Live Chat, generates AI-powered responses using a locally running **Llama 3.2 model through Ollama**, and automatically posts the response back to the YouTube Live Chat.
-
----
+The current version uses a lightweight local model configured in `brain.py` and includes a Streamlit dashboard to replay saved messages.
 
 ## Features
 
-* Read YouTube Live Chat messages
-* Generate responses using local AI
-* Powered by Ollama + Llama 3.2
-* LangChain integration
-* Automatically reply to subscribers
-* Reply in the same language as the subscriber
-* Supports English, Hindi, Marathi, Hinglish, and mixed languages
-* Marathi written in English letters is supported
-* Desi and casual conversation style
-* Short and natural responses
-* Light humor when appropriate
-* No voice/TTS
-* Save chat history
-* Streamlit dashboard
-* Google OAuth 2.0 authentication
-* Runs locally
+- Reads YouTube Live Chat messages
+- Detects likely questions or mentions using a smart reply filter
+- Sends messages to a local LLM through Ollama
+- Replies in a natural, short, conversational style
+- Handles English, Hindi, Hinglish, Marathi, and mixed-language chat
+- Saves chat history in JSONL format
+- Shows the replay dashboard in Streamlit
+- Uses Google OAuth to authenticate with YouTube
+- Runs locally without sending chat data to a remote AI service
 
----
-
-## Project Workflow
+## Project Flow
 
 ```text
 YouTube Live Chat
         ↓
-Subscriber Message
+Subscriber message
         ↓
 YouTube Data API v3
         ↓
-Python
+ChatBrain (youtube.py)
         ↓
-LangChain
+Local LLM via Ollama
         ↓
-Ollama
+Short AI response
         ↓
-Llama 3.2
-        ↓
-AI Generated Response
-        ↓
-YouTube Data API
-        ↓
-YouTube Live Chat
+Reply posted back to YouTube Live Chat
 ```
 
-### Chat History
+The app also logs chat activity for later viewing in the Streamlit dashboard:
 
 ```text
-Subscriber Message
+YouTube message
         ↓
 chat_history.jsonl
         ↓
-Streamlit Dashboard
+Streamlit dashboard
 ```
-
----
 
 ## Tech Stack
 
-| Technology          | Purpose                          |
-| ------------------- | -------------------------------- |
-| Python              | Main programming language        |
-| Ollama              | Local AI model runtime           |
-| Llama 3.2           | AI language model                |
-| LangChain           | LLM integration                  |
-| YouTube Data API v3 | Read and send live chat messages |
-| Google OAuth 2.0    | YouTube authentication           |
-| Streamlit           | Dashboard                        |
-| JSONL               | Chat history storage             |
-
----
+- Python
+- Google YouTube Data API v3
+- Google OAuth 2.0
+- Ollama
+- LangChain + `langchain-ollama`
+- Streamlit
+- JSONL for chat history
 
 ## Project Structure
 
 ```text
 chat-brain/
-│
-├── youtube.py
-├── app.py
-├── requirements.txt
-├── run_chatbrain.cmd
+├── app.py                # Streamlit dashboard
+├── brain.py              # LLM prompt + response generation
+├── youtube.py            # YouTube listener and reply logic
+├── requirements.txt      # Python dependencies
+├── run_chatbrain.cmd     # Windows launcher
+├── run_chatbrain.sh      # macOS/Linux launcher
 ├── README.md
-├── .gitignore
-│
-├── client_secret.json
-├── token.json
-├── .env
-└── chat_history.jsonl
+├── chat_history.jsonl   # Local chat log
+├── client_secret.json    # Google OAuth client file (local only)
+├── token.json            # YouTube auth token (local only)
+└── .gitignore
 ```
 
-> `client_secret.json`, `token.json`, `.env`, and `chat_history.jsonl` should remain local and must not be uploaded to GitHub.
+> Keep `client_secret.json`, `token.json`, and `chat_history.jsonl` local to your machine. Do not add them to GitHub if you do not want to share credentials or local chat data.
 
----
+## Requirements
 
-# Requirements
+Before running the app, install:
 
-Before running ChatBrain, install:
+- Python 3.10+
+- Ollama
+- A YouTube account with a live stream
+- Google Cloud project with YouTube Data API enabled
 
-* Python 3.10+
-* Ollama
-* Llama 3.2
-* Google Cloud account
-* YouTube channel
-* YouTube Data API v3
+## Installation
 
----
-
-# Installation
-
-## 1. Install Ollama
-
-Download Ollama:
-
-https://ollama.com/
-
-Check the installation:
+### 1. Clone the repository
 
 ```bash
-ollama --version
-```
-
----
-
-## 2. Download Llama 3.2
-
-```bash
-ollama pull llama3.2
-```
-
-Check installed models:
-
-```bash
-ollama list
-```
-
-Test the model:
-
-```bash
-ollama run llama3.2
-```
-
----
-
-## 3. Clone the Repository
-
-```bash
-git clone https://github.com/Sp-4030/chat-brain.git
-```
-
-Go to the project directory:
-
-```bash
+git clone <your-repo-url>
 cd chat-brain
 ```
 
----
-
-## 4. Create Virtual Environment
+### 2. Create a virtual environment
 
 Windows:
 
 ```bash
 python -m venv venv
-```
-
-Activate it:
-
-```bash
 venv\Scripts\activate
 ```
 
----
+macOS/Linux:
 
-## 5. Install Dependencies
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### 3. Install dependencies
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-Or install manually:
+The current dependency set includes:
 
 ```bash
-python -m pip install google-auth-oauthlib google-auth-httplib2 google-api-python-client langchain-ollama streamlit langchain
+streamlit
+langchain-ollama
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+python-dotenv
 ```
 
----
+### 4. Install Ollama and pull a model
 
-# YouTube API Setup
+Download Ollama from:
 
-ChatBrain uses the **YouTube Data API v3** to read and send Live Chat messages.
+https://ollama.com/
 
-## 1. Create Google Cloud Project
+Verify it is installed:
 
-Open:
+```bash
+ollama --version
+```
+
+Pull the model used by the app:
+
+```bash
+ollama pull qwen2.5:0.5b
+```
+
+If you want a different model, update the `MODEL_NAME` value in `brain.py`.
+
+## Google YouTube Setup
+
+### 1. Create a Google Cloud project
+
+Go to:
 
 https://console.cloud.google.com/
 
-Create a project.
+Create a new project and name it however you like.
 
-Example:
+### 2. Enable the YouTube Data API
 
-```text
-ChatBrain
-```
+In Google Cloud Console:
 
----
+- APIs & Services
+- Library
+- Search for `YouTube Data API v3`
+- Click Enable
 
-## 2. Enable YouTube Data API v3
+### 3. Create OAuth credentials
 
-Go to:
+In Google Cloud Console:
 
-```text
-Google Cloud Console
-        ↓
-APIs & Services
-        ↓
-Library
-        ↓
-YouTube Data API v3
-        ↓
-Enable
-```
+- APIs & Services
+- Credentials
+- Create Credentials
+- OAuth client ID
+- Application type: Desktop app
 
----
-
-## 3. Create OAuth Client
-
-Go to:
-
-```text
-APIs & Services
-        ↓
-Credentials
-        ↓
-Create Credentials
-        ↓
-OAuth Client ID
-```
-
-Select:
-
-```text
-Desktop app
-```
-
-Download the JSON file.
-
-Rename it:
+Download the generated JSON file and rename it to:
 
 ```text
 client_secret.json
 ```
 
-Place it inside the project folder:
+Place it in the project root.
 
-```text
-chat-brain/
-├── youtube.py
-├── app.py
-├── client_secret.json
-└── ...
-```
+### 4. Required OAuth scope
 
----
-
-# OAuth Permission
-
-ChatBrain uses:
+This app uses:
 
 ```text
 https://www.googleapis.com/auth/youtube.force-ssl
 ```
 
-This allows the application to interact with YouTube on behalf of the authenticated account.
+This grants permission to read and write YouTube Live Chat messages for the authenticated channel.
 
----
+## Running the app
 
-# First Run
+### Option 1: use the launcher scripts
 
-Start your YouTube Live Stream first.
+Windows:
 
-If an old `token.json` exists, delete it for the first setup or whenever you need to re-authorize with the required permission.
+```cmd
+run_chatbrain.cmd
+```
 
-Run:
+macOS/Linux:
+
+```bash
+chmod +x run_chatbrain.sh
+./run_chatbrain.sh
+```
+
+These scripts start:
+
+- the YouTube live chat listener in `youtube.py`
+- the Streamlit dashboard in `app.py`
+
+### Option 2: run manually
+
+Start the chat bot:
 
 ```bash
 python youtube.py
 ```
 
-A Google login window will open.
-
-Sign in with the YouTube account that owns the Live Stream and allow the requested permissions.
-
-After successful authentication, ChatBrain creates:
-
-```text
-token.json
-```
-
----
-
-# Start ChatBrain
-
-Start your YouTube Live Stream.
-
-Then run:
-
-```bash
-python youtube.py
-```
-
-You should see:
-
-```text
-========================================
-          CHATBRAIN STARTING
-========================================
-
-YouTube OAuth: CONNECTED
-
-Searching for active YouTube Live...
-
-Live Chat ID found successfully!
-
-========================================
-        CHATBRAIN IS CONNECTED
-========================================
-
-YouTube Live : CONNECTED
-Ollama       : CONNECTED
-Model        : llama3.2
-YouTube Reply: ENABLED
-
-Waiting for subscriber messages...
-```
-
-Now ChatBrain will monitor the Live Chat.
-
----
-
-# Example
-
-### Subscriber
-
-```text
-Python kya hai?
-```
-
-### ChatBrain
-
-```text
-Python ek programming language hai bhai. Beginners ke liye iska syntax kaafi simple hai.
-```
-
----
-
-### Subscriber
-
-```text
-Python म्हणजे काय?
-```
-
-### ChatBrain
-
-```text
-Python ही एक programming language आहे. Beginners साठी तिचा syntax simple आहे.
-```
-
----
-
-### Subscriber
-
-```text
-Python kay aahe?
-```
-
-### ChatBrain
-
-```text
-Python ek programming language aahe bhai. Beginners sathi ti easy aahe.
-```
-
----
-
-### Subscriber
-
-```text
-What is Python?
-```
-
-### ChatBrain
-
-```text
-Python is a programming language known for its simple and readable syntax.
-```
-
----
-
-# Streamlit Dashboard
-
-ChatBrain also includes a Streamlit dashboard.
-
-Run:
+Start the dashboard in another terminal:
 
 ```bash
 python -m streamlit run app.py
 ```
 
-The dashboard can display saved ChatBrain conversations and chat activity.
+## First run
 
----
+1. Start a YouTube Live stream on the channel you want to monitor.
+2. Run the app.
+3. Sign in with the YouTube account that owns the stream when Google prompts you.
+4. The app creates a local `token.json` file after successful authentication.
+5. Once connected, it will monitor the live chat and reply when conditions match.
+
+If you need to re-authorize, delete the existing `token.json` and run again.
+
+## Dashboard
+
+Open the Streamlit dashboard at:
+
+```text
+http://localhost:8501
+```
+
+The dashboard shows the saved chat history and replay of messages with the AI reply status.
+
+## Notes
+
+- The default model in `brain.py` is `qwen2.5:0.5b`.
+- The bot is intentionally conservative: it only replies when a message looks like a question, includes a bot mention, or otherwise fits the reply filter.
+- Responses are intentionally short and conversational to fit a live chat environment.
+- This is a local-first project; it does not require a hosted LLM backend.
+
+## Example replies
+
+Subscriber:
+
+```text
+Python kya hai?
+```
+
+ChatBrain:
+
+```text
+Python ek programming language hai bhai. Beginners ke liye iska syntax kaafi simple hai.
+```
+
+Subscriber:
+
+```text
+What is Python?
+```
+
+ChatBrain:
+
+```text
+Python is a programming language known for its simple and readable syntax.
+```
+
 
 # One-Click Startup
 
