@@ -1,4 +1,4 @@
-# ChatBrain
+# 🧠🤖Chat-Brain🧠🤖
 
 ChatBrain is a local AI-powered YouTube Live Chat assistant. It watches a live stream, filters relevant subscriber messages, sends them to a local Ollama model, and posts a short conversational reply back into chat.
 
