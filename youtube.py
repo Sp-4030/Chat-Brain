@@ -25,9 +25,7 @@ HISTORY_FILE = "chat_history.jsonl"
 
 MAX_REPLY_LENGTH = 200
 
-# Minimum safety interval.
-# IMPORTANT:
-# We still follow YouTube's returned pollingIntervalMillis.
+
 MIN_POLL_SECONDS = 1
 
 ERROR_RETRY_SECONDS = 10
@@ -677,14 +675,7 @@ def start_chat(
 
         try:
 
-            # -----------------------------------------
-            # Get live chat messages
-            #
-            # NO pageToken.
-            #
-            # We follow YouTube's recommended
-            # polling interval.
-            # -----------------------------------------
+
 
             response = youtube.liveChatMessages().list(
                 liveChatId=live_chat_id,
@@ -756,10 +747,7 @@ def start_chat(
                 MIN_POLL_SECONDS
             )
 
-            print(
-                f"Next check in "
-                f"{polling_seconds:.1f}s"
-            )
+        
 
             time.sleep(
                 polling_seconds
