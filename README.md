@@ -139,10 +139,10 @@ ollama --version
 Pull the model used by the app:
 
 ```bash
-ollama pull qwen2.5:0.5b
+ollama pull llama3.2:latest
 ```
 
-If you want a different model, update the `MODEL_NAME` value in `brain.py`.
+The current model is configured as `llama3.2:latest` in `brain.py`. If you want to use a different Ollama model, update the `MODEL_NAME` value there and pull that model first.
 
 ## Google YouTube Setup
 
@@ -213,6 +213,8 @@ These scripts start:
 - the YouTube live chat listener in `youtube.py`
 - the Streamlit dashboard in `app.py`
 
+The launcher opens separate terminal windows for both processes. Keep both processes running while using ChatBrain.
+
 ### Option 2: run manually
 
 Start the chat bot:
@@ -247,9 +249,11 @@ http://localhost:8501
 
 The dashboard shows the saved chat history and replay of messages with the AI reply status.
 
+The dashboard reads `chat_history.jsonl` from the project directory. It refreshes when you click **Refresh Chat**; it does not replace the YouTube listener.
+
 ## Notes
 
-- The default model in `brain.py` is `qwen2.5:0.5b`.
+- The default model in `brain.py` is `llama3.2:latest`.
 - The bot is intentionally conservative: it only replies when a message looks like a question, includes a bot mention, or otherwise fits the reply filter.
 - Responses are intentionally short and conversational to fit a live chat environment.
 - This is a local-first project; it does not require a hosted LLM backend.
@@ -389,7 +393,7 @@ If it is not recognized, install Ollama and restart the terminal.
 Run:
 
 ```bash
-ollama pull llama3.2
+ollama pull llama3.2:latest
 ```
 
 Then:
