@@ -87,7 +87,7 @@ Before running the app, install:
 ### 1. Clone the repository
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Sp-4030/Chat-Brain.git
 cd chat-brain
 ```
 
