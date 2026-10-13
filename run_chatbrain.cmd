@@ -1,13 +1,18 @@
 @echo off
 title ChatBrain
-
 cd /d "%~dp0"
 
-where py >nul 2>nul
-if not errorlevel 1 (
-    set "PYTHON_CMD=py -3"
+if exist "%~dp0venv\Scripts\python.exe" (
+    set "PYTHON_CMD=%~dp0venv\Scripts\python.exe"
+) else if exist "%~dp0.venv\Scripts\python.exe" (
+    set "PYTHON_CMD=%~dp0.venv\Scripts\python.exe"
 ) else (
-    set "PYTHON_CMD=python"
+    where py >nul 2>nul
+    if not errorlevel 1 (
+        set "PYTHON_CMD=py -3"
+    ) else (
+        set "PYTHON_CMD=python"
+    )
 )
 
 echo ========================================
@@ -16,12 +21,12 @@ echo ========================================
 echo.
 
 echo Starting YouTube ChatBrain...
-start "" /D "%~dp0" cmd /k "%PYTHON_CMD% youtube.py"
+start "ChatBrain Service" /D "%~dp0" cmd /k ""%PYTHON_CMD%" main.py"
 
-timeout /t 5 /nobreak >nul
+timeout /t 4 /nobreak >nul
 
 echo Starting Streamlit Dashboard...
-start "" /D "%~dp0" cmd /k "%PYTHON_CMD% -m streamlit run app.py"
+start "ChatBrain Dashboard" /D "%~dp0" cmd /k ""%PYTHON_CMD%" -m streamlit run app.py"
 
 echo.
 echo ========================================
