@@ -40,6 +40,8 @@ class Settings:
     OLLAMA_TEMPERATURE: float = float(os.getenv("OLLAMA_TEMPERATURE", "0.8"))
     OLLAMA_TIMEOUT: float = float(os.getenv("OLLAMA_TIMEOUT", "30.0"))
     OLLAMA_MAX_RETRIES: int = int(os.getenv("OLLAMA_MAX_RETRIES", "2"))
+    # Limit model output tokens so replies stay short (0 = model default)
+    OLLAMA_MAX_TOKENS: int = int(os.getenv("OLLAMA_MAX_TOKENS", "80"))
 
     # YouTube API Settings
     SCOPES: List[str] = field(
@@ -106,6 +108,31 @@ class Settings:
         "AI/ML, Python, DSA, Data Science, technology, and building AI projects"
     )
 
+    # Shantanu Roast Persona
+    # Set ROAST_ENABLED=false in .env to disable the roast behaviour at runtime.
+    ROAST_ENABLED: bool = os.getenv("ROAST_ENABLED", "true").lower() in ("1", "true", "yes")
+
+    # Configurable roast line templates.  Use {name} as a placeholder for the
+    # streamer name.  Pipe-separated so it can live in a single env var.
+    # These are friendly comedy lines — not factual employment claims.
+    ROAST_LINES: List[str] = field(
+        default_factory=lambda: [
+            l.strip()
+            for l in os.getenv(
+                "ROAST_LINES",
+                "{name} berojgar hai bhai 😂|"
+                "{name} ka career abhi loading pe hai 😂|"
+                "Job ka toh pata nahi bhai, career loading pe hai 😂|"
+                "Pehle job toh lagne de bhai 😂|"
+                "{name} ke sapne bade hain, bas loading thodi slow hai 😂|"
+                "{name} abhi apna next move plan kar raha hai 😂|"
+                "Bhai, {name} ka CV toh ready hai, HR ne reply nahi kiya abhi tak 😂|"
+                "{name} busy hai — life mein settings ho rahi hain 😂",
+            ).split("|")
+            if l.strip()
+        ]
+    )
+
     def validate(self) -> List[str]:
         """Validate critical configuration and return list of warnings/issues."""
         issues: List[str] = []
@@ -146,6 +173,8 @@ class Settings:
             "MAX_CONTEXT_TURNS": self.MAX_CONTEXT_TURNS,
             "HUMOR_ENABLED": self.HUMOR_ENABLED,
             "HUMOR_INTENSITY": self.HUMOR_INTENSITY,
+            "ROAST_ENABLED": self.ROAST_ENABLED,
+            "OLLAMA_MAX_TOKENS": self.OLLAMA_MAX_TOKENS,
             "STREAMER_NAME": self.STREAMER_NAME,
             "STREAMER_LOCATION": self.STREAMER_LOCATION,
         }

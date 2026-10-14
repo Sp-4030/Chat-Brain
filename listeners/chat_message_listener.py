@@ -11,6 +11,7 @@ from typing import Optional
 from comedy.humor_engine import HumorEngine
 from config.settings import Settings, get_settings
 from context.conversation_context import ConversationContextManager
+from decision.intent_detector import IntentDetector, INTENT_SHANTANU_ROAST
 from decision.reply_decision import ReplyDecisionEngine
 from events.chat_message_event import ChatMessageEvent
 from identity.user_identity import UserIdentityManager
@@ -53,6 +54,8 @@ class ChatMessageListener:
         self.message_sender = message_sender
         self.feedback_tracker = feedback_tracker or InteractionFeedbackTracker()
         self.live_chat_id = live_chat_id
+        # Intent detector — instantiated once, stateless
+        self.intent_detector = IntentDetector()
 
     def set_live_chat_id(self, live_chat_id: str) -> None:
         """Set the active YouTube live chat ID."""
@@ -106,25 +109,42 @@ class ChatMessageListener:
         event.detected_language = detected_language
         logger.debug("Detected language for message: %s", detected_language)
 
-        # 7. Context Retrieval
+        # 7. Intent Detection
+        intent_result = self.intent_detector.detect(
+            message=event.text,
+            author_name=event.author_name,
+        )
+        logger.info(
+            "Intent detected: %s (confidence=%s, signal='%s')",
+            intent_result.intent,
+            intent_result.confidence,
+            intent_result.matched_signal,
+        )
+
+        # 8. Context Retrieval
         user_key = event.author_id or f"name:{event.author_name.lower()}"
         context_str = self.context_manager.format_user_context_prompt(user_key)
 
-        # 8. Humor Guidance
-        humor_hint = None
-        if self.humor_engine.should_apply_humor(event.text):
+        # 9. Humor Guidance
+        # For roast intent, pass a pre-picked roast line as a concrete example
+        # so the model has something to riff on rather than invent its own.
+        humor_hint: Optional[str] = None
+        if intent_result.intent == INTENT_SHANTANU_ROAST and self.settings.ROAST_ENABLED:
+            humor_hint = self.prompt_builder.pick_roast_line()
+        elif self.humor_engine.should_apply_humor(event.text):
             humor_hint = self.humor_engine.get_humor_guidance(event.text, detected_language)
 
-        # 9. Prompt Construction
+        # 10. Prompt Construction
         prompt = self.prompt_builder.build_prompt(
             message=event.text,
             author_name=event.author_name,
             language=detected_language,
             context_str=context_str,
             humor_guidance=humor_hint,
+            intent=intent_result.intent,
         )
 
-        # 10. Ollama Inference
+        # 11. Ollama Inference
         raw_reply, latency = self.ollama_client.generate(prompt)
 
         # 11. Response Cleaning & Sanitization
