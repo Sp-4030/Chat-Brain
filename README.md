@@ -12,7 +12,13 @@ ChatBrain is a local AI-powered chatbot designed to automatically interact with 
   - Hindi (Devanagari: हिंदी)
   - Hinglish (Roman Hindi: e.g. *kya haal hai bhai*)
   - English
-- **Natural Desi Personality**: Stream-tailored conversational tone featuring friendly banter, Kolhapur/Maharashtra touches, and BCA/coding life tropes.
+- **Natural Desi Personality**: Replies like a casual Indian friend — short, punchy, natural Hinglish/Hindi/Marathi/English. No robotic introductions, no formal AI disclaimers.
+- **Intent-Aware Context Detection**: Offline keyword-based intent classifier routes each viewer message into the correct persona block:
+  - `shantanu_roast` — questions about the streamer's job/career trigger friendly career jokes
+  - `chatbrain_self` — direct questions about the bot get a direct bot answer
+  - `topic_query` — anime, tech, or content questions get helpful direct answers
+  - `general` — casual banter gets casual desi-friend replies
+- **Shantanu Roast Persona**: Configurable creator-comedy mode. When viewers ask "aap kya kaam karte ho?", ChatBrain replies with a playful career joke (e.g. *"Shantanu berojgar hai bhai 😂"*). Fully configurable via `.env` — enable/disable with `ROAST_ENABLED`, customise lines via `ROAST_LINES`.
 - **Modular Event-Driven Architecture**: Decoupled message reader, normalization, duplicate filter, reply decision engine, context manager, and YouTube dispatcher.
 - **API Quota & Rate-Limit Protection**: 
   - YouTube-mandated polling interval adherence.
@@ -22,7 +28,7 @@ ChatBrain is a local AI-powered chatbot designed to automatically interact with 
 - **Smart Reply Filtering**: Only processes questions or direct mentions (`@chatbrain`) during busy streams, saving API quota.
 - **Isolated Conversation Memory**: Maintains short-term conversational context per viewer for natural follow-ups without context bleed between viewers.
 - **Streamlit Replay Dashboard**: Real-time interface to inspect live chats, model responses, delivery status, and operational metrics.
-- **Windows Launcher**: Simple `.cmd` scripts with automatic virtual environment detection.
+- **Windows Launcher**: Simple `.cmd` script with automatic virtual environment detection.
 
 ---
 
@@ -60,6 +66,7 @@ chat-brain/
 │   └── user_identity.py        # Stable channel tracking, bot self-check & cooldowns
 ├── decision/
 │   ├── __init__.py
+│   ├── intent_detector.py      # Offline intent classifier (shantanu_roast / chatbrain_self / topic_query / general)
 │   ├── reply_decision.py       # Reply eligibility, mention & question evaluation
 │   └── safety_rules.py         # Spam prevention, link filters & blocked keywords
 ├── comedy/
@@ -84,8 +91,7 @@ chat-brain/
 │   └── language_detector.py    # Lightweight script & lexical language detector
 ├── requirements.txt            # Python dependencies
 ├── .env.example                # Configuration template
-├── start_chatbrain.cmd         # Windows launcher with virtualenv auto-detection
-├── run_chatbrain.cmd           # Alternate Windows launcher
+├── run_chatbrain.cmd           # Windows one-click launcher
 └── README.md
 ```
 
@@ -106,11 +112,12 @@ YouTube Live Stream
 ├── [UserIdentityManager] (Update viewer history; verify not bot's own message)
 ├── [ReplyDecisionEngine] (Check smart filter, question words, global & user cooldowns)
 ├── [LanguageDetector] (Identify Marathi Devanagari/Roman, Hindi, Hinglish, English)
+├── [IntentDetector] (Classify: shantanu_roast / chatbrain_self / topic_query / general)
 ├── [ConversationContextManager] (Retrieve recent context for this viewer)
-├── [HumorEngine] (Determine if light banter/humor fits)
-├── [PromptBuilder] (Assemble persona prompt + guardrails)
-├── [OllamaClient] (Local inference via Ollama with retry & timeout protection)
-├── [PromptBuilder.clean_reply] (Strip prefixes, deduplicate, limit length)
+├── [HumorEngine / pick_roast_line] (Select humor hint or roast line based on intent)
+├── [PromptBuilder] (Assemble intent-specific persona prompt + guardrails)
+├── [OllamaClient] (Local inference via Ollama with token cap, retry & timeout protection)
+├── [PromptBuilder.clean_reply] (Strip prefixes, "As an AI" openers, deduplicate, limit length)
 ├── [YouTubeMessageSender] (Post text reply to YouTube Live Chat)
 └── [ConversationMemory] (Save record to chat_history.jsonl)
 ```
@@ -150,6 +157,7 @@ flowchart TD
         Decision["ReplyDecisionEngine<br/>(Smart Filter & Cooldown Rules)"]
         Safety["SafetyRules<br/>(Spam & Link Filter)"]
         Lang["LanguageDetector<br/>(Script & Lexicon Analyzer)"]
+        Intent["IntentDetector<br/>(Offline Keyword Classifier)"]
     end
 
     subgraph GenerationLayer["Context & AI Generation Layer"]
@@ -176,16 +184,17 @@ flowchart TD
     Listener -->|3. Evaluate Eligibility| Decision
     Decision -.-> Safety
     Listener -->|4. Detect Script & Dialect| Lang
-    Listener -->|5. Retrieve History| Context
-    Listener -->|6. Contextual Banter Hint| Humor
-    Listener -->|7. Assemble Prompt| Prompt
-    Listener -->|8. Generate Completion| LLM
+    Listener -->|5. Classify Intent| Intent
+    Listener -->|6. Retrieve History| Context
+    Listener -->|7. Humor / Roast Hint| Humor
+    Listener -->|8. Assemble Prompt| Prompt
+    Listener -->|9. Generate Completion| LLM
     LLM -->|Local Inference| Ollama
-    Listener -->|9. Sanitize & Dedup Egress| Memory
-    Listener -->|10. Dispatch Reply| Sender
+    Listener -->|10. Sanitize & Dedup Egress| Memory
+    Listener -->|11. Dispatch Reply| Sender
     Sender -->|Post Message| YT
-    Listener -->|11. Record Metrics| Telemetry
-    Listener -->|12. Persist JSONL| JSONL
+    Listener -->|12. Record Metrics| Telemetry
+    Listener -->|13. Persist JSONL| JSONL
 ```
 
 ```mermaid
@@ -223,11 +232,12 @@ stateDiagram-v2
 
     state PipelineExecution {
         [*] --> DetectLanguage : Script & Lexical Classification
-        DetectLanguage --> ContextRetrieval : Fetch Viewer's Past 3 Turns
-        ContextRetrieval --> HumorSelection : Select Desi Theme Hint
-        HumorSelection --> BuildPrompt : Inject Guardrails & Persona
-        BuildPrompt --> InvokeLLM : Send to Ollama
-        InvokeLLM --> CleanReply : Sanitize & Truncate
+        DetectLanguage --> IntentClassify : Offline Keyword Routing
+        IntentClassify --> ContextRetrieval : Fetch Viewer's Past 3 Turns
+        ContextRetrieval --> HumorSelection : Select Roast Line or Humor Hint
+        HumorSelection --> BuildPrompt : Inject Intent-Specific Persona & Guardrails
+        BuildPrompt --> InvokeLLM : Send to Ollama (token-capped)
+        InvokeLLM --> CleanReply : Sanitize, Strip AI-openers & Truncate
         CleanReply --> EgressDedup : Prevent Consecutive Duplicate
     }
 
@@ -401,6 +411,22 @@ classDiagram
     }
     ConversationContextManager o-- ConversationTurn
 
+    class IntentDetector {
+        +List _SHANTANU_JOB_SIGNALS
+        +List _SHANTANU_NAME_SIGNALS
+        +List _CHATBRAIN_SIGNALS
+        +List _TOPIC_SIGNALS
+        +detect(message, author_name) IntentResult
+        -_matches_any(text, signals) bool
+    }
+
+    class IntentResult {
+        +str intent
+        +str confidence
+        +str matched_signal
+    }
+    IntentDetector --> IntentResult
+
     class HumorEngine {
         +bool enabled
         +float intensity
@@ -416,8 +442,10 @@ classDiagram
 
     class PromptBuilder {
         -Settings settings
+        -List _recent_roast_lines
         +clean_message(message: str) str
-        +build_prompt(...) str
+        +pick_roast_line() str
+        +build_prompt(..., intent: str) str
         +clean_reply(reply: str) str
         +get_fallback_reply(language: str) str
     }
@@ -461,6 +489,7 @@ classDiagram
         -HumorEngine humor_engine
         -OllamaClient ollama_client
         -PromptBuilder prompt_builder
+        -IntentDetector intent_detector
         -YouTubeMessageSender message_sender
         -InteractionFeedbackTracker feedback_tracker
         +str live_chat_id
@@ -491,6 +520,7 @@ classDiagram
     ChatMessageListener --> PromptBuilder
     ChatMessageListener --> OllamaClient
     ChatMessageListener --> LanguageDetector
+    ChatMessageListener --> IntentDetector
     ChatMessageListener --> InteractionFeedbackTracker
 ```
 
@@ -505,13 +535,17 @@ classDiagram
 - **Key Fields**:
   - `OLLAMA_BASE_URL` (`str`): Base URL for local Ollama server (default: `http://localhost:11434`).
   - `OLLAMA_MODEL` (`str`): Active model tag (default: `llama3.2:latest`).
+  - `OLLAMA_TEMPERATURE` (`float`): Model sampling temperature (default: `0.8`).
   - `OLLAMA_TIMEOUT` (`float`): Inference timeout limit in seconds (default: `30.0`).
+  - `OLLAMA_MAX_TOKENS` (`int`): Maximum output tokens per reply — keeps chat replies short (default: `80`; set to `0` to disable).
   - `SMART_REPLY_FILTER` (`bool`): Gatekeeper for only replying to questions or mentions during heavy stream chat.
   - `GLOBAL_REPLY_COOLDOWN_SECONDS` (`float`): Global pacing interval between any replies (default: `3.0`).
   - `USER_REPLY_COOLDOWN_SECONDS` (`float`): User-level pacing cooldown (default: `10.0`).
   - `MAX_REPLIES_PER_USER_WINDOW` (`int`): Maximum replies to the same user in a sliding window (default: `3` in `60.0s`).
   - `MAX_REPLY_LENGTH` (`int`): Maximum character length for YouTube Live Chat output (default: `200`).
   - `HUMOR_ENABLED` (`bool`) & `HUMOR_INTENSITY` (`float`): Enables and scales probability of contextual humor injection (0.0 to 1.0).
+  - `ROAST_ENABLED` (`bool`): Enables the Shantanu career-roast persona (default: `true`). Set `false` to disable.
+  - `ROAST_LINES` (`List[str]`): Bank of friendly career-joke templates. Pipe-separated in `.env`. Use `{name}` as the streamer name placeholder. 8 defaults provided.
 - **Methods**:
   - `validate() -> List[str]`: Evaluates environment variables and files, returning non-blocking operational warnings.
   - `get_settings() -> Settings`: Singleton factory function.
@@ -548,22 +582,23 @@ classDiagram
 
 #### 3.4. Orchestrating Listener (`listeners/chat_message_listener.py`)
 
-- **Class**: [`ChatMessageListener`](file:///c:/Users/Shantanu/Desktop/chat-brain/listeners/chat_message_listener.py#L28-L186)
+- **Class**: [`ChatMessageListener`](file:///c:/Users/Shantanu/Desktop/chat-brain/listeners/chat_message_listener.py#L28-L206)
 - **Role**: Implements the linear message processing pipeline upon receiving a `ChatMessageEvent`:
   1. **Telemetry Ingress**: Increments `feedback_tracker.record_received()`.
   2. **Ingress Deduplication**: Invokes `memory.is_processed(event.message_id)`. Exits immediately if duplicate.
   3. **Viewer Profiling**: Updates or registers `UserProfile` in `identity_manager`.
   4. **Policy & Rate-Limit Evaluation**: Evaluates eligibility via `decision_engine.evaluate(...)`. Exits if rejected.
   5. **Language & Script Classification**: Runs `detect_language(event.text)` to extract script and dialect.
-  6. **Context Retrieval**: Formats bounded previous user turns into a prompt block via `context_manager.format_user_context_prompt(...)`.
-  7. **Humor Hint Synthesis**: Checks `humor_engine.should_apply_humor(...)` and attaches contextual guidance.
-  8. **Prompt Assembly**: Assembles persona guidelines, streamer facts, context, and language constraints via `prompt_builder.build_prompt(...)`.
-  9. **Inference Execution**: Queries `ollama_client.generate(prompt)`.
-  10. **Output Sanitization**: Strips prefix tags, meta commentary, and quotes via `prompt_builder.clean_reply(...)`.
-  11. **Egress Deduplication**: Checks `memory.is_duplicate_reply(reply)` and appends variation if identical to an immediate past response.
-  12. **Live Dispatch**: Dispatches reply via `message_sender.send_reply(live_chat_id, reply)`.
-  13. **Post-Dispatch State Updates**: Records timestamps in `decision_engine`, `identity_manager`, and registers outgoing message ID to prevent self-loop.
-  14. **Context & Audit Persistence**: Updates viewer memory queue and appends structured interaction to `chat_history.jsonl`.
+  6. **Intent Classification**: Runs `intent_detector.detect(event.text)` → one of `shantanu_roast`, `chatbrain_self`, `topic_query`, `general`. Logged at INFO level with confidence and matched signal.
+  7. **Context Retrieval**: Formats bounded previous user turns into a prompt block via `context_manager.format_user_context_prompt(...)`.
+  8. **Humor / Roast Hint Synthesis**: For `shantanu_roast` intent, calls `prompt_builder.pick_roast_line()` as the concrete humor hint. For other intents, delegates to `humor_engine.should_apply_humor(...)` as before.
+  9. **Prompt Assembly**: Selects the intent-specific persona block and assembles it with language constraints and context via `prompt_builder.build_prompt(intent=...)`.
+  10. **Inference Execution**: Queries `ollama_client.generate(prompt)` with token cap active.
+  11. **Output Sanitization**: Strips prefix tags, `"As an AI"` openers, meta commentary, and quotes via `prompt_builder.clean_reply(...)`.
+  12. **Egress Deduplication**: Checks `memory.is_duplicate_reply(reply)` and appends variation if identical to an immediate past response.
+  13. **Live Dispatch**: Dispatches reply via `message_sender.send_reply(live_chat_id, reply)`.
+  14. **Post-Dispatch State Updates**: Records timestamps in `decision_engine`, `identity_manager`, and registers outgoing message ID to prevent self-loop.
+  15. **Context & Audit Persistence**: Updates viewer memory queue and appends structured interaction to `chat_history.jsonl`.
 
 #### 3.5. Decision & Safety Engine (`decision/`)
 
@@ -580,6 +615,17 @@ classDiagram
        - Global Cooldown: Drops messages if elapsed time since last reply $< \text{GLOBAL\_REPLY\_COOLDOWN\_SECONDS}$.
        - User Sliding Window: Calls `identity_manager.can_reply_to_user(...)` to prevent spamming from individual viewers.
      - **Contract**: Returns [`DecisionResult`](file:///c:/Users/Shantanu/Desktop/chat-brain/decision/reply_decision.py#L22-L29) (`should_reply: bool`, `reason: str`, `is_direct_mention: bool`, `is_question: bool`).
+  3. [`IntentDetector`](file:///c:/Users/Shantanu/Desktop/chat-brain/decision/intent_detector.py) — *new*:
+     - **Role**: Offline, zero-latency keyword-based classifier that routes each viewer message to one of four intent labels, enabling the prompt builder to choose the correct persona block.
+     - **Intent Labels**:
+       | Intent | Triggers | Prompt Persona Used |
+       |--------|----------|---------------------|
+       | `shantanu_roast` | Job/career/salary keywords ± Shantanu name or ambiguous pronouns | Playful career-joke persona |
+       | `chatbrain_self` | Explicit "chatbrain" / "@chatbrain" mention (without Shantanu name) | Direct bot-identity answer |
+       | `topic_query` | Anime, tech, code, recommend, explain keywords | Helpful knowledgeable-friend answer |
+       | `general` | Everything else | Casual desi-friend banter |
+     - **Classification Priority**: ChatBrain explicit mention → Shantanu name + job signal → pronoun + job signal → pure job signal → topic signals → general.
+     - **Anti-ambiguity rule**: `"chatbrain tu kya karta hai?"` → `chatbrain_self` (bot question). `"chatbrain, shantanu kya karta hai?"` → `shantanu_roast` (streamer question through the bot).
 
 #### 3.6. Identity & Cooldown Manager (`identity/user_identity.py`)
 
@@ -612,21 +658,27 @@ classDiagram
      - `ENGLISH_MARKERS` (e.g., *what, how, who, brother, thanks*)
   3. **Output**: Returns tuple `(language_code, confidence_score)` where code is one of: `marathi_devanagari`, `marathi_roman`, `hindi_devanagari`, `hinglish`, `english`, or `unknown`.
 
-#### 3.9. Humor & Persona Engine (`comedy/humor_engine.py` & `llm/prompt_builder.py`)
+#### 3.9. Humor, Persona & Roast Engine (`comedy/humor_engine.py` & `llm/prompt_builder.py`)
 
 - **Classes**:
   1. [`HumorEngine`](file:///c:/Users/Shantanu/Desktop/chat-brain/comedy/humor_engine.py#L18-L94):
      - Evaluates message sentiment and intent to provide subtle cultural touches.
      - Avoids dry technical questions; triggers on casual greetings, job inquiries, or direct joke requests.
      - Curates topics (`job_hunt`, `coding`, `kolhapur`, `student_life`) and cycles them through a bounded `deque(maxlen=6)` to prevent repetitive jokes.
-  2. [`PromptBuilder`](file:///c:/Users/Shantanu/Desktop/chat-brain/llm/prompt_builder.py#L18-L185):
-     - Dynamically binds streamer background, language-specific constraints, and few-shot formatting rules.
-     - Post-processes model responses: strips markdown bolding, removes hallucinated conversational prefixes (e.g., `ChatBrain:`, `AI:`), eliminates duplicate trailing punctuation, and truncates within YouTube live chat constraints.
+  2. [`PromptBuilder`](file:///c:/Users/Shantanu/Desktop/chat-brain/llm/prompt_builder.py#L31-L280) — *updated*:
+     - **Intent-aware prompt routing**: `build_prompt(intent=...)` selects one of four persona blocks based on the classified intent:
+       - `shantanu_roast`: Instructs the model to write ONE short, friendly career joke using the provided roast examples. Forbids "I am an AI" framing.
+       - `chatbrain_self`: Tells the model to explain what ChatBrain does in one casual sentence.
+       - `topic_query`: Helpful knowledgeable-friend prompt with optional humor hint.
+       - `general`: Casual desi-friend banter prompt.
+     - **`pick_roast_line()`**: Randomly selects a roast line from `settings.ROAST_LINES`, tracks recently used lines in a bounded list to avoid repetition across viewers.
+     - **Post-processing**: Strips markdown bolding, removes hallucinated prefixes (`ChatBrain:`, `AI:`), strips `"As an AI / I am an AI"` openers, eliminates duplicate sentences, and truncates within YouTube live chat constraints.
 
 #### 3.10. Ollama Local LLM Client (`llm/ollama_client.py`)
 
 - **Class**: [`OllamaClient`](file:///c:/Users/Shantanu/Desktop/chat-brain/llm/ollama_client.py#L22-L97)
 - **Interface**: Wraps `langchain_ollama.ChatOllama` with custom resilience logic.
+- **Token Cap**: Passes `num_predict=OLLAMA_MAX_TOKENS` (default: `80`) to `ChatOllama` on initialization, ensuring replies stay short regardless of prompt complexity. Set `OLLAMA_MAX_TOKENS=0` in `.env` to disable.
 - **Health Verification**: Queries `GET {base_url}/api/tags` to verify server connectivity and confirm local presence of configured `OLLAMA_MODEL`.
 - **Generation & Resilience**: Implements bounded retry loops (`OLLAMA_MAX_RETRIES=2`) with exponential sleep and precise request latency timing.
 
@@ -657,8 +709,9 @@ sequenceDiagram
     participant Identity as UserIdentityManager
     participant Decision as ReplyDecisionEngine
     participant Detector as LanguageDetector
+    participant Intent as IntentDetector
     participant Context as ConversationContextManager
-    participant Humor as HumorEngine
+    participant Humor as HumorEngine/PromptBuilder
     participant Prompt as PromptBuilder
     participant LLM as OllamaClient
     participant Sender as YouTubeMessageSender
@@ -690,18 +743,23 @@ sequenceDiagram
                     Listener->>Detector: detect(text)
                     Detector-->>Listener: (language_code, confidence)
 
+                    Listener->>Intent: detect(text)
+                    Intent-->>Listener: IntentResult(intent, confidence)
+
                     Listener->>Context: format_user_context_prompt(user_key)
                     Context-->>Listener: context_str
 
-                    Listener->>Humor: should_apply_humor(text)
-                    alt Humor Applicable
+                    Listener->>Humor: should_apply_humor(text) or pick_roast_line()
+                    alt Roast Intent
+                        Humor-->>Listener: roast_line (pre-picked)
+                    else Humor Applicable
                         Humor->>Humor: get_humor_guidance(text, language)
                         Humor-->>Listener: humor_hint
                     else No Humor
                         Humor-->>Listener: None
                     end
 
-                    Listener->>Prompt: build_prompt(text, author, language, context, humor)
+                    Listener->>Prompt: build_prompt(text, author, language, context, humor, intent)
                     Prompt-->>Listener: formatted_prompt
 
                     Listener->>LLM: generate(formatted_prompt)
@@ -922,11 +980,10 @@ Verify your setup without starting YouTube polling:
 python main.py --status
 ```
 
-### Option A: Using Windows Launcher Scripts
+### Option A: Using Windows Launcher
 
-Double-click either launcher script in the project directory:
-- `start_chatbrain.cmd` (Recommended): Auto-detects virtual environment, launches ChatBrain in one console window and Streamlit Dashboard in another.
-- `run_chatbrain.cmd`: Legacy launcher script.
+Double-click the launcher script in the project directory:
+- `run_chatbrain.cmd`: Auto-detects virtual environment and launches ChatBrain.
 
 ### Option B: Running from Terminal
 
@@ -956,12 +1013,15 @@ Create or update your `.env` file (see `.env.example` for reference):
 | `OLLAMA_MODEL` | `llama3.2:latest` | Local LLM model name |
 | `OLLAMA_TIMEOUT` | `30.0` | Maximum inference timeout (seconds) |
 | `OLLAMA_TEMPERATURE` | `0.8` | LLM creativity / sampling temperature |
+| `OLLAMA_MAX_TOKENS` | `80` | Max output tokens per reply (keeps replies short; `0` = model default) |
 | `MAX_REPLY_LENGTH` | `200` | Maximum response character length |
 | `SMART_REPLY_FILTER` | `true` | When true, only replies to mentions and questions |
 | `GLOBAL_REPLY_COOLDOWN_SECONDS` | `3.0` | Minimum interval between any bot replies |
 | `USER_REPLY_COOLDOWN_SECONDS` | `10.0` | Minimum cooldown before replying to the same user |
 | `HUMOR_ENABLED` | `true` | Enables light desi banter |
 | `HUMOR_INTENSITY` | `0.7` | Humor frequency (0.0 to 1.0) |
+| `ROAST_ENABLED` | `true` | Enables friendly Shantanu career-roast jokes. Set `false` to disable |
+| `ROAST_LINES` | *(8 built-in Hinglish lines)* | Pipe-separated roast line templates. Use `{name}` as the streamer name placeholder |
 | `LOG_LEVEL` | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `HISTORY_FILE` | `chat_history.jsonl` | File path for persistent chat logs |
 
