@@ -30,11 +30,17 @@ class OllamaClient:
         self.timeout = self.settings.OLLAMA_TIMEOUT
         self.max_retries = self.settings.OLLAMA_MAX_RETRIES
 
+        # Build extra kwargs only when a token cap is set
+        extra_kwargs: dict = {}
+        if self.settings.OLLAMA_MAX_TOKENS > 0:
+            extra_kwargs["num_predict"] = self.settings.OLLAMA_MAX_TOKENS
+
         self._llm = ChatOllama(
             base_url=self.base_url,
             model=self.model_name,
             temperature=self.temperature,
             timeout=self.timeout,
+            **extra_kwargs,
         )
 
     def check_health(self) -> Tuple[bool, List[str], str]:
